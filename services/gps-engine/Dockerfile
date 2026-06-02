@@ -5,6 +5,7 @@ FROM base AS deps
 WORKDIR /app
 COPY pnpm-workspace.yaml ./
 COPY package.json ./
+COPY pnpm-lock.yaml ./
 COPY packages/db/package.json ./packages/db/
 COPY packages/shared/package.json ./packages/shared/
 COPY services/gps-engine/package.json ./services/gps-engine/

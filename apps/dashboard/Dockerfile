@@ -5,6 +5,7 @@ FROM base AS deps
 WORKDIR /app
 COPY pnpm-workspace.yaml ./
 COPY package.json ./
+COPY pnpm-lock.yaml ./
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/dashboard/package.json ./apps/dashboard/
 RUN pnpm install --filter @field-ops/dashboard... --frozen-lockfile
