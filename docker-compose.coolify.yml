@@ -88,6 +88,13 @@ services:
       dockerfile: services/api/Dockerfile
     container_name: fieldops-api
     <<: *service-defaults
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.api.rule=Host(`${API_DOMAIN}`)
+      - traefik.http.routers.api.entrypoints=https
+      - traefik.http.routers.api.tls=true
+      - traefik.http.routers.api.tls.certresolver=letsencrypt
+      - traefik.http.services.api.loadbalancer.server.port=4000
     environment:
       <<: *common-env
       PORT: 4000
@@ -113,6 +120,13 @@ services:
       dockerfile: services/whatsapp-logger/Dockerfile
     container_name: fieldops-whatsapp-logger
     <<: *service-defaults
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.webhook.rule=Host(`${WEBHOOK_DOMAIN}`)
+      - traefik.http.routers.webhook.entrypoints=https
+      - traefik.http.routers.webhook.tls=true
+      - traefik.http.routers.webhook.tls.certresolver=letsencrypt
+      - traefik.http.services.webhook.loadbalancer.server.port=4001
     environment:
       <<: *common-env
       PORT: 4001
@@ -260,6 +274,13 @@ services:
       dockerfile: apps/dashboard/Dockerfile
     container_name: fieldops-dashboard
     <<: *service-defaults
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.dashboard.rule=Host(`${DASHBOARD_DOMAIN}`)
+      - traefik.http.routers.dashboard.entrypoints=https
+      - traefik.http.routers.dashboard.tls=true
+      - traefik.http.routers.dashboard.tls.certresolver=letsencrypt
+      - traefik.http.services.dashboard.loadbalancer.server.port=3000
     environment:
       NODE_ENV: production
       NEXTAUTH_URL: ${NEXTAUTH_URL}
