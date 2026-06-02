@@ -1,3 +1,4 @@
+import http from 'http';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -15,7 +16,12 @@ import { contractRouter } from './routes/contract.routes';
 import { violationRouter } from './routes/violation.routes';
 import { dashboardRouter } from './routes/dashboard.routes';
 import { healthRouter } from './routes/health.routes';
+import { simActivityRouter } from './routes/sim-activity.routes';
+import { appActivityRouter } from './routes/app-activity.routes';
+import { knownLocationRouter } from './routes/known-location.routes';
+import { marketingMessageRouter } from './routes/marketing-message.routes';
 import { rateLimiter } from './middleware/rate-limit.middleware';
+import { initSocketIO } from './socket';
 
 const logger = createLogger('api');
 const app = express();
@@ -28,7 +34,7 @@ app.use(cors({
   origin: process.env.NEXTAUTH_URL ?? 'http://localhost:3000',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Internal-Secret'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Internal-Secret', 'X-Device-Token'],
 }));
 app.use(compression());
 app.use(express.json({ limit: '2mb' }));
@@ -47,16 +53,24 @@ app.use('/api/v1/alerts', alertRouter);
 app.use('/api/v1/contracts', contractRouter);
 app.use('/api/v1/violations', violationRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
+app.use('/api/v1/sim-activity', simActivityRouter);
+app.use('/api/v1/app-activity', appActivityRouter);
+app.use('/api/v1/known-locations', knownLocationRouter);
+app.use('/api/v1/marketing-messages', marketingMessageRouter);
 
 app.use(errorHandler);
 
-app.listen(PORT, '0.0.0.0', () => {
+const httpServer = http.createServer(app);
+
+initSocketIO(httpServer, process.env.NEXTAUTH_URL ?? 'http://localhost:3000');
+
+httpServer.listen(PORT, '0.0.0.0', () => {
   logger.info(`API service started`, { port: PORT, env: process.env.NODE_ENV });
 });
 
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down');
-  process.exit(0);
+  httpServer.close(() => process.exit(0));
 });
 
 export default app;

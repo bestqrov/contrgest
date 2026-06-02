@@ -2,7 +2,6 @@ import { prisma } from './client';
 import {
   EmployeeRole,
   EmployeeStatus,
-  ContractType,
   KnownLocationType,
 } from '@prisma/client';
 

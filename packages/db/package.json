@@ -2,7 +2,10 @@
   "name": "@field-ops/db",
   "version": "1.0.0",
   "private": true,
+  "main": "./dist/client.js",
+  "types": "./dist/client.d.ts",
   "scripts": {
+    "build": "tsc",
     "generate": "prisma generate",
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",

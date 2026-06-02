@@ -13,6 +13,10 @@ declare global {
         role: string;
         employeeNumber: string;
       };
+      device?: {
+        id: string;
+        employeeId: string | null;
+      };
     }
   }
 }
@@ -50,6 +54,33 @@ export function requireRole(...roles: string[]) {
     }
     next();
   };
+}
+
+export async function authenticateDevice(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  try {
+    const token = req.headers['x-device-token'] as string | undefined;
+    if (!token) {
+      throw new AppError(401, ERROR_CODES.UNAUTHORIZED, 'Missing device token');
+    }
+
+    const device = await prisma.device.findFirst({
+      where: { deviceTokenHash: token },
+      select: { id: true, employeeId: true, status: true },
+    });
+
+    if (!device) {
+      throw new AppError(401, ERROR_CODES.UNAUTHORIZED, 'Invalid device token');
+    }
+
+    if (device.status === 'DECOMMISSIONED' || device.status === 'STOLEN') {
+      throw new AppError(403, ERROR_CODES.FORBIDDEN, 'Device is not authorized');
+    }
+
+    req.device = { id: device.id, employeeId: device.employeeId };
+    next();
+  } catch (err) {
+    next(err);
+  }
 }
 
 export function internalServiceAuth(req: Request, _res: Response, next: NextFunction): void {
