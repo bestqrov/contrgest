@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+.next/
+*.local
+.env
+.env.*
+!.env.example
+coverage/
+*.log
+.DS_Store
+*.pem
+.turbo/
+prisma/migrations/dev.db
+android/
+ios/

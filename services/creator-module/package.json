@@ -1,0 +1,25 @@
+{
+  "name": "@field-ops/creator-module",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@field-ops/db": "workspace:*",
+    "@field-ops/shared": "workspace:*",
+    "express": "^4.21.1",
+    "helmet": "^8.0.0",
+    "axios": "^1.7.7",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "typescript": "^5.6.3",
+    "@types/node": "^22.9.0",
+    "ts-node-dev": "^2.0.0"
+  }
+}
