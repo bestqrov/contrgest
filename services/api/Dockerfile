@@ -23,6 +23,7 @@ COPY services/api ./services/api
 COPY tsconfig.base.json ./
 
 RUN pnpm --filter @field-ops/db generate
+RUN pnpm --filter @field-ops/db build
 RUN pnpm --filter @field-ops/shared build
 RUN pnpm --filter @field-ops/api build
 
@@ -32,6 +33,7 @@ ENV NODE_ENV=production
 
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 fieldops
 COPY --from=builder --chown=fieldops:nodejs /app/packages/db/node_modules ./packages/db/node_modules
+COPY --from=builder --chown=fieldops:nodejs /app/packages/db/dist ./packages/db/dist
 COPY --from=builder --chown=fieldops:nodejs /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder --chown=fieldops:nodejs /app/services/api/dist ./services/api/dist
 COPY --from=builder --chown=fieldops:nodejs /app/services/api/node_modules ./services/api/node_modules

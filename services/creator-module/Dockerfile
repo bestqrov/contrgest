@@ -22,6 +22,7 @@ COPY packages/shared ./packages/shared
 COPY services/creator-module ./services/creator-module
 COPY tsconfig.base.json ./
 RUN pnpm --filter @field-ops/db generate
+RUN pnpm --filter @field-ops/db build
 RUN pnpm --filter @field-ops/shared build
 RUN pnpm --filter @field-ops/creator-module build
 
@@ -30,6 +31,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 fieldops
 COPY --from=builder --chown=fieldops:nodejs /app/packages/db/node_modules ./packages/db/node_modules
+COPY --from=builder --chown=fieldops:nodejs /app/packages/db/dist ./packages/db/dist
 COPY --from=builder --chown=fieldops:nodejs /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder --chown=fieldops:nodejs /app/services/creator-module/dist ./services/creator-module/dist
 COPY --from=builder --chown=fieldops:nodejs /app/services/creator-module/node_modules ./services/creator-module/node_modules

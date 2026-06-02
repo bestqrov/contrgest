@@ -22,6 +22,7 @@ COPY packages/shared ./packages/shared
 COPY services/mdm-service ./services/mdm-service
 COPY tsconfig.base.json ./
 RUN pnpm --filter @field-ops/db generate
+RUN pnpm --filter @field-ops/db build
 RUN pnpm --filter @field-ops/shared build
 RUN pnpm --filter @field-ops/mdm-service build
 
@@ -30,6 +31,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 fieldops
 COPY --from=builder --chown=fieldops:nodejs /app/packages/db/node_modules ./packages/db/node_modules
+COPY --from=builder --chown=fieldops:nodejs /app/packages/db/dist ./packages/db/dist
 COPY --from=builder --chown=fieldops:nodejs /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder --chown=fieldops:nodejs /app/services/mdm-service/dist ./services/mdm-service/dist
 COPY --from=builder --chown=fieldops:nodejs /app/services/mdm-service/node_modules ./services/mdm-service/node_modules
