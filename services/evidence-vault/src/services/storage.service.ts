@@ -1,15 +1,17 @@
-import { createReadStream, createWriteStream } from 'fs';
-import { mkdir, unlink, stat } from 'fs/promises';
-import { join, extname } from 'path';
-import { pipeline } from 'stream/promises';
-import { IncomingMessage } from 'http';
-import axios from 'axios';
 import mime from 'mime-types';
-import { sha256File, sha256Hex, generateToken, createLogger } from '@field-ops/shared';
+import { extname } from 'path';
+import axios from 'axios';
+import {
+  uploadBuffer as minioUpload,
+  objectExists,
+  evidenceKey,
+  EVIDENCE_BUCKET,
+  sha256Hex,
+  createLogger,
+} from '@field-ops/shared';
 import { prisma } from '@field-ops/db';
 
 const logger = createLogger('evidence-vault:storage');
-const STORAGE_ROOT = process.env.EVIDENCE_STORAGE_PATH ?? '/data/evidence';
 const MAX_SIZE_BYTES = parseInt(process.env.EVIDENCE_MAX_FILE_SIZE_MB ?? '1024', 10) * 1024 * 1024;
 
 export interface ArchiveResult {
@@ -17,14 +19,20 @@ export interface ArchiveResult {
   sha256Hash: string;
   storagePath: string;
   sizeBytes: bigint;
+  url: string;
 }
+
+type LinkedTo =
+  | { type: 'message'; id: string }
+  | { type: 'sale'; id: string }
+  | { type: 'content_submission'; id: string };
 
 class StorageService {
   async archiveBuffer(
     buffer: Buffer,
     originalName: string,
     mimeType: string,
-    linkedTo: { type: 'message' | 'sale' | 'content_submission'; id: string },
+    linkedTo: LinkedTo,
     uploadedBy?: string,
   ): Promise<ArchiveResult> {
     if (buffer.length > MAX_SIZE_BYTES) {
@@ -33,37 +41,39 @@ class StorageService {
 
     const hash = sha256Hex(buffer);
 
-    // Dedup: if we already have this exact file, link and return
+    // SHA-256 dedup — same content → same record
     const existing = await prisma.evidenceFile.findUnique({ where: { sha256Hash: hash } });
     if (existing) {
+      logger.debug('Dedup: returning existing evidence record', { id: existing.id, hash });
       return {
         id: existing.id,
         sha256Hash: hash,
         storagePath: existing.storagePath,
         sizeBytes: existing.sizeBytes,
+        url: `${process.env.EVIDENCE_VAULT_INTERNAL_URL ?? 'http://evidence-vault:4003'}/files/${existing.id}`,
       };
     }
 
-    const ext = extname(originalName) || `.${mime.extension(mimeType) || 'bin'}`;
-    const fileName = `${generateToken(16)}${ext}`;
-    const datePath = this.datePath();
-    const dirPath = join(STORAGE_ROOT, datePath);
-    await mkdir(dirPath, { recursive: true });
+    const ext = extname(originalName).replace('.', '') || mime.extension(mimeType) || 'bin';
+    const category = linkedTo.type.replace('_', '-');
+    const key = evidenceKey(category, new Date(), hash, ext);
 
-    const storagePath = join(datePath, fileName);
-    const absolutePath = join(STORAGE_ROOT, storagePath);
-
-    await this.writeFile(absolutePath, buffer);
+    const uploadResult = await minioUpload(EVIDENCE_BUCKET, key, buffer, mimeType, {
+      linkedType: linkedTo.type,
+      linkedId: linkedTo.id,
+      originalName,
+    });
 
     const record = await prisma.evidenceFile.create({
       data: {
-        fileName,
+        fileName: key.split('/').pop()!,
         originalName,
         mimeType,
         sizeBytes: BigInt(buffer.length),
         sha256Hash: hash,
-        storagePath,
-        storageProvider: 'local',
+        storagePath: key,
+        storageProvider: 'minio',
+        bucketName: EVIDENCE_BUCKET,
         uploadedBy,
         ...(linkedTo.type === 'message' ? { messageId: linkedTo.id } : {}),
         ...(linkedTo.type === 'sale' ? { saleId: linkedTo.id } : {}),
@@ -71,19 +81,26 @@ class StorageService {
       },
     });
 
-    logger.info('Evidence archived', { id: record.id, hash, size: buffer.length, type: linkedTo.type });
+    logger.info('Evidence archived to MinIO', {
+      id: record.id,
+      hash,
+      size: buffer.length,
+      key,
+      type: linkedTo.type,
+    });
 
     return {
       id: record.id,
       sha256Hash: hash,
-      storagePath,
+      storagePath: key,
       sizeBytes: BigInt(buffer.length),
+      url: uploadResult.url,
     };
   }
 
   async archiveFromUrl(
     url: string,
-    linkedTo: { type: 'message' | 'sale' | 'content_submission'; id: string },
+    linkedTo: LinkedTo,
     mimeHint?: string,
   ): Promise<ArchiveResult | null> {
     try {
@@ -108,24 +125,12 @@ class StorageService {
     }
   }
 
-  getAbsolutePath(storagePath: string): string {
-    return join(STORAGE_ROOT, storagePath);
-  }
+  async verifyIntegrity(evidenceFileId: string): Promise<{ valid: boolean; storedHash: string }> {
+    const record = await prisma.evidenceFile.findUnique({ where: { id: evidenceFileId } });
+    if (!record) return { valid: false, storedHash: '' };
 
-  private async writeFile(path: string, buffer: Buffer): Promise<void> {
-    const ws = createWriteStream(path);
-    await new Promise<void>((resolve, reject) => {
-      ws.write(buffer, (err) => {
-        if (err) reject(err);
-        else ws.end(resolve);
-      });
-      ws.on('error', reject);
-    });
-  }
-
-  private datePath(): string {
-    const now = new Date();
-    return `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
+    const exists = await objectExists(EVIDENCE_BUCKET, record.storagePath);
+    return { valid: exists, storedHash: record.sha256Hash };
   }
 }
 

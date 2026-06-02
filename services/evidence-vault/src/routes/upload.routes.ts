@@ -1,20 +1,17 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, IRouter } from 'express';
 import multer from 'multer';
 import { storageService } from '../services/storage.service';
 import { createLogger } from '@field-ops/shared';
 
 const logger = createLogger('evidence-vault:upload');
-export const uploadRouter = Router();
+export const uploadRouter: IRouter = Router();
 
 const MAX_MB = parseInt(process.env.EVIDENCE_MAX_FILE_SIZE_MB ?? '1024', 10);
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_MB * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    const allowed = (process.env.EVIDENCE_MAX_FILE_SIZE_MB ?? '')
-      .split(',')
-      .map((s) => s.trim());
+  fileFilter: (_req, _file, cb) => {
     cb(null, true); // Allow all — callers are internal services
   },
 });
