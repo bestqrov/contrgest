@@ -1,13 +1,12 @@
-import { Router, Request, Response } from 'express';
-import { verifyHmac, createLogger } from '@field-ops/shared';
-import { messageProcessor } from '../services/message-processor.service';
+import { Router, Request, Response, IRouter } from 'express';
+import { verifyHmac, sha256Hex, createLogger } from '@field-ops/shared';
+import { prisma } from '@field-ops/db';
+import { waEventsQueue } from '../queues';
 
 const logger = createLogger('whatsapp-logger:webhook');
-export const webhookRouter = Router();
+export const webhookRouter: IRouter = Router();
 
-// Evolution API sends events here
 webhookRouter.post('/evolution', async (req: Request, res: Response) => {
-  // Verify HMAC signature from Evolution API
   const signature = req.headers['x-webhook-signature'] as string | undefined;
   const secret = process.env.WHATSAPP_WEBHOOK_SECRET!;
 
@@ -20,16 +19,39 @@ webhookRouter.post('/evolution', async (req: Request, res: Response) => {
     }
   }
 
-  // Respond 200 immediately — Evolution API expects fast ACK
+  // Must ACK Evolution API in <200ms
   res.json({ received: true });
 
   const event = req.body as EvolutionWebhookEvent;
-  logger.debug('Webhook event received', { event: event.event, instance: event.instance });
 
   try {
-    await messageProcessor.handle(event);
+    const payloadStr = JSON.stringify(event);
+    const hash = sha256Hex(payloadStr);
+    const payloadBytes = Buffer.byteLength(payloadStr, 'utf8');
+
+    // Immutable raw event insert (upsert deduplicates retries)
+    const raw = await prisma.rawWebhookEvent.upsert({
+      where: { sha256Hash: hash },
+      update: {},
+      create: {
+        sha256Hash: hash,
+        event: event.event ?? 'unknown',
+        instance: event.instance ?? 'unknown',
+        rawPayload: event as object,
+        payloadBytes,
+      },
+    });
+
+    // Only enqueue if newly inserted (not already processed)
+    if (!raw.processedAt) {
+      await waEventsQueue.add(
+        event.event ?? 'unknown',
+        { rawEventId: raw.id, event },
+        { attempts: 3, backoff: { type: 'exponential', delay: 2000 } },
+      );
+    }
   } catch (err) {
-    logger.error('Failed to process webhook event', {
+    logger.error('Failed to store raw webhook event', {
       error: err instanceof Error ? err.message : String(err),
       event: event.event,
     });
