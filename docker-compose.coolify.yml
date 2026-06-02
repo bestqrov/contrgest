@@ -1,0 +1,278 @@
+version: '3.9'
+
+# ============================================================
+# FieldOps — Coolify Production Compose
+# PostgreSQL + Redis are external Coolify services (not here)
+# Only app services + MinIO are defined here
+# ============================================================
+
+x-logging: &default-logging
+  driver: 'json-file'
+  options:
+    max-size: '10m'
+    max-file: '3'
+
+x-common-env: &common-env
+  NODE_ENV: production
+  DATABASE_URL: ${DATABASE_URL}
+  REDIS_URL: ${REDIS_URL}
+  INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  LOG_FORMAT: ${LOG_FORMAT:-json}
+  MINIO_ENDPOINT: http://minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+  MINIO_EVIDENCE_BUCKET: ${MINIO_EVIDENCE_BUCKET:-fieldops-evidence}
+  MINIO_APK_BUCKET: ${MINIO_APK_BUCKET:-fieldops-apk}
+  MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL}
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  logging: *default-logging
+
+services:
+
+  # ── MinIO Object Storage ────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: fieldops-minio
+    <<: *service-defaults
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  createbuckets:
+    image: minio/mc:latest
+    container_name: fieldops-createbuckets
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: 'no'
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set local http://minio:9000 $${MINIO_ACCESS_KEY} $${MINIO_SECRET_KEY} &&
+      /usr/bin/mc mb --ignore-existing local/fieldops-evidence &&
+      /usr/bin/mc mb --ignore-existing local/fieldops-apk &&
+      /usr/bin/mc anonymous set public local/fieldops-apk &&
+      echo 'Buckets ready' && exit 0
+      "
+
+  # ── DB Migrations (runs once on deploy) ─────────────────────
+  db-migrate:
+    build:
+      context: .
+      dockerfile: packages/db/Dockerfile
+    container_name: fieldops-db-migrate
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    restart: 'no'
+
+  # ── API (Central Gateway + Socket.io) ───────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    container_name: fieldops-api
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      PORT: 4000
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
+      API_RATE_LIMIT_WINDOW_MS: ${API_RATE_LIMIT_WINDOW_MS:-900000}
+      API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-100}
+    ports:
+      - '4000:4000'
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+
+  # ── WhatsApp Logger ─────────────────────────────────────────
+  whatsapp-logger:
+    build:
+      context: .
+      dockerfile: services/whatsapp-logger/Dockerfile
+    container_name: fieldops-whatsapp-logger
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      PORT: 4001
+      EVOLUTION_API_URL: ${EVOLUTION_API_URL}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE_NAME: ${EVOLUTION_INSTANCE_NAME}
+      WHATSAPP_WEBHOOK_SECRET: ${WHATSAPP_WEBHOOK_SECRET}
+      WHATSAPP_OWNER_JID: ${WHATSAPP_OWNER_JID}
+      API_INTERNAL_URL: http://api:4000
+      ALERT_ENGINE_INTERNAL_URL: http://alert-engine:4006
+      EVIDENCE_VAULT_INTERNAL_URL: http://evidence-vault:4003
+    ports:
+      - '4001:4001'
+    depends_on:
+      - api
+
+  # ── Content Guard ───────────────────────────────────────────
+  content-guard:
+    build:
+      context: .
+      dockerfile: services/content-guard/Dockerfile
+    container_name: fieldops-content-guard
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      PORT: 4002
+      MAX_CONTENT_FILE_SIZE_MB: ${MAX_CONTENT_FILE_SIZE_MB:-500}
+      CONTENT_TOKEN_SECRET: ${CONTENT_TOKEN_SECRET}
+      ALERT_ENGINE_INTERNAL_URL: http://alert-engine:4006
+      EVIDENCE_VAULT_INTERNAL_URL: http://evidence-vault:4003
+    ports:
+      - '4002:4002'
+    depends_on:
+      - api
+
+  # ── Evidence Vault ──────────────────────────────────────────
+  evidence-vault:
+    build:
+      context: .
+      dockerfile: services/evidence-vault/Dockerfile
+    container_name: fieldops-evidence-vault
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      PORT: 4003
+      EVIDENCE_RETENTION_DAYS: ${EVIDENCE_RETENTION_DAYS:-365}
+    ports:
+      - '4003:4003'
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  # ── GPS Engine ──────────────────────────────────────────────
+  gps-engine:
+    build:
+      context: .
+      dockerfile: services/gps-engine/Dockerfile
+    container_name: fieldops-gps-engine
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      PORT: 4004
+      GPS_ANOMALY_SPEED_THRESHOLD_KMH: ${GPS_ANOMALY_SPEED_THRESHOLD_KMH:-150}
+      GPS_STOP_ANOMALY_MINUTES: ${GPS_STOP_ANOMALY_MINUTES:-20}
+      GPS_OFFLINE_THRESHOLD_MINUTES: ${GPS_OFFLINE_THRESHOLD_MINUTES:-15}
+      GPS_WORK_HOURS_START: ${GPS_WORK_HOURS_START:-8}
+      GPS_WORK_HOURS_END: ${GPS_WORK_HOURS_END:-19}
+      ALERT_ENGINE_INTERNAL_URL: http://alert-engine:4006
+      API_INTERNAL_URL: http://api:4000
+    ports:
+      - '4004:4004'
+    depends_on:
+      - api
+
+  # ── MDM Service ─────────────────────────────────────────────
+  mdm-service:
+    build:
+      context: .
+      dockerfile: services/mdm-service/Dockerfile
+    container_name: fieldops-mdm-service
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      PORT: 4005
+      MDM_ENROLLMENT_TOKEN_EXPIRES_HOURS: ${MDM_ENROLLMENT_TOKEN_EXPIRES_HOURS:-24}
+      AGENT_PACKAGE_NAME: ${AGENT_PACKAGE_NAME:-ma.yourcompany.fieldops}
+      AGENT_APK_CHECKSUM: ${AGENT_APK_CHECKSUM}
+      PROVISIONING_WIFI_SSID: ${PROVISIONING_WIFI_SSID}
+      PROVISIONING_WIFI_PASSWORD: ${PROVISIONING_WIFI_PASSWORD}
+      ALERT_ENGINE_INTERNAL_URL: http://alert-engine:4006
+    ports:
+      - '4005:4005'
+    depends_on:
+      - api
+
+  # ── Alert Engine ─────────────────────────────────────────────
+  alert-engine:
+    build:
+      context: .
+      dockerfile: services/alert-engine/Dockerfile
+    container_name: fieldops-alert-engine
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      PORT: 4006
+      ALERT_CHECK_INTERVAL_MS: ${ALERT_CHECK_INTERVAL_MS:-60000}
+      ALERT_ESCALATION_TIMEOUT_MINUTES: ${ALERT_ESCALATION_TIMEOUT_MINUTES:-30}
+      EVOLUTION_API_URL: ${EVOLUTION_API_URL}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE_NAME: ${EVOLUTION_INSTANCE_NAME}
+      WHATSAPP_OWNER_JID: ${WHATSAPP_OWNER_JID}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      API_INTERNAL_URL: http://api:4000
+    ports:
+      - '4006:4006'
+    depends_on:
+      - api
+
+  # ── Creator Module ───────────────────────────────────────────
+  creator-module:
+    build:
+      context: .
+      dockerfile: services/creator-module/Dockerfile
+    container_name: fieldops-creator-module
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      PORT: 4007
+      CREATOR_COMMISSION_CALCULATION_DAY: ${CREATOR_COMMISSION_CALCULATION_DAY:-28}
+      INTEGRITY_BONUS_RATE: ${INTEGRITY_BONUS_RATE:-0.05}
+      ALERT_ENGINE_INTERNAL_URL: http://alert-engine:4006
+      EVIDENCE_VAULT_INTERNAL_URL: http://evidence-vault:4003
+    ports:
+      - '4007:4007'
+    depends_on:
+      - api
+
+  # ── Dashboard ────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    container_name: fieldops-dashboard
+    <<: *service-defaults
+    environment:
+      NODE_ENV: production
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      OWNER_EMAIL: ${OWNER_EMAIL}
+      OWNER_PASSWORD_HASH: ${OWNER_PASSWORD_HASH}
+      API_INTERNAL_URL: http://api:4000
+    ports:
+      - '3000:3000'
+    depends_on:
+      - api
+
+volumes:
+  minio_data:
+    driver: local
