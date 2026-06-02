@@ -1,66 +1,103 @@
-// Internal event bus types for Bull queues
+// Typed payloads for Redis pub/sub channels and Socket.io events
 
-export interface GpsTrackEvent {
+export interface GpsUpdatePayload {
   employeeId: string;
   deviceId: string;
   latitude: number;
   longitude: number;
-  accuracy?: number;
-  altitude?: number;
-  speed?: number;
-  heading?: number;
-  timestamp: string; // ISO 8601
-  batchId?: string;
+  speed: number | null;
+  batteryLevel: number | null;
+  timestamp: string;
 }
 
-export interface WhatsappMessageEvent {
+export interface AlertNewPayload {
+  alertId: string;
+  type: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  title: string;
+  description: string;
+  employeeId: string | null;
+  deviceId: string | null;
+  evidenceLinks: string[];
+  recommendedAction: string | null;
+  createdAt: string;
+}
+
+export interface WaMessageDeletedPayload {
+  messageId: string;
   whatsappMessageId: string;
   employeeId: string;
-  contactPhone: string;
-  contactName?: string;
-  direction: 'INBOUND' | 'OUTBOUND';
-  type: string;
-  content?: string;
-  mediaUrl?: string;
-  timestamp: string;
-  isGroupMessage: boolean;
-  groupId?: string;
-  groupName?: string;
+  deletedAt: string;
+  originalTimestamp: string;
+  minutesSinceSend: number;
 }
 
-export interface ContentSubmittedEvent {
+export interface WaMessageNewPayload {
+  messageId: string;
+  employeeId: string;
+  direction: 'INBOUND' | 'OUTBOUND';
+  type: string;
+  timestamp: string;
+  isFlagged: boolean;
+}
+
+export interface ContentSubmittedPayload {
   submissionId: string;
   creatorId: string;
   platform: string;
-  contentType: string;
-  fileUrl: string;
-  fileHash: string;
+  status: string;
+  createdAt: string;
 }
 
-export interface AlertTriggeredEvent {
-  type: string;
-  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  employeeId?: string;
-  title: string;
-  description: string;
-  metadata?: Record<string, unknown>;
+export interface GpsAnomalyPayload {
+  anomalyId: string;
+  employeeId: string;
+  deviceId: string;
+  type: 'LONG_STOP' | 'ROUTE_DEVIATION' | 'OFFLINE';
+  latitude: number | null;
+  longitude: number | null;
+  startedAt: string;
 }
 
-export interface MdmPolicyPushEvent {
+export interface WaSaleDetectedPayload {
+  employeeId: string;
+  messageId: string;
+  detectedAmount: number | null;
+  clientPhone: string | null;
+  timestamp: string;
+}
+
+export interface DeviceFactoryResetPayload {
   deviceId: string;
   employeeId: string;
-  policyId: string;
-  policyVersion: number;
+  imei: string;
+  timestamp: string;
+  snapshotPath: string | null;
 }
 
-export interface EvidenceArchiveEvent {
-  sourceService: string;
-  sourceId: string;
-  fileUrl: string;
-  originalName: string;
-  mimeType: string;
-  linkedTo: {
-    type: 'message' | 'sale' | 'content_submission';
-    id: string;
-  };
+export interface Sim2SuspiciousPayload {
+  simActivityId: string;
+  deviceId: string;
+  employeeId: string;
+  contactNumber: string;
+  activityType: string;
+  timestamp: string;
+  flagReason: string;
+}
+
+// ─── Socket.io event maps (server → dashboard) ────────────────────────────────
+
+export interface ServerToClientEvents {
+  'alert:new':            (payload: AlertNewPayload) => void;
+  'gps:update':           (payload: GpsUpdatePayload) => void;
+  'message:new':          (payload: WaMessageNewPayload) => void;
+  'message:deleted':      (payload: WaMessageDeletedPayload) => void;
+  'content:submitted':    (payload: ContentSubmittedPayload) => void;
+  'gps:anomaly':          (payload: GpsAnomalyPayload) => void;
+  'device:reset-attempt': (payload: DeviceFactoryResetPayload) => void;
+}
+
+// Dashboard sends nothing upstream currently
+export interface ClientToServerEvents {
+  join: (room: string) => void;
 }

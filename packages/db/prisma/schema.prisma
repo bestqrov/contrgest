@@ -46,13 +46,16 @@ enum MessageType {
   LOCATION
   STICKER
   REACTION
+  STORY
 }
 
 enum ContentStatus {
   PENDING
+  AUTO_APPROVED
+  AUTO_REJECTED
+  NEEDS_MANUAL_REVIEW
   APPROVED
   REJECTED
-  REVISION_REQUESTED
 }
 
 enum AlertSeverity {
@@ -73,6 +76,16 @@ enum AlertType {
   CONTRACT_EXPIRY
   MDM_POLICY_VIOLATION
   UNAUTHORIZED_APP
+  FACTORY_RESET_ATTEMPT
+  MESSAGE_DELETED
+  UNPAID_SALE_DETECTED
+  DUPLICATE_IMEI
+  CONTENT_PUBLISHED_WITHOUT_TOKEN
+  CONTENT_DELETED_EXTERNALLY
+  COMMISSION_DISCREPANCY
+  SIM2_SUSPICIOUS_CONTACT
+  PERSONAL_WA_VIOLATION
+  MARKETING_DATA_MISUSE
 }
 
 enum AlertStatus {
@@ -99,6 +112,31 @@ enum ViolationType {
   UNAUTHORIZED_CONTACT
 }
 
+enum KnownLocationType {
+  WAREHOUSE
+  CLIENT
+  APPROVED_STOP
+}
+
+enum GpsAnomalyType {
+  LONG_STOP
+  ROUTE_DEVIATION
+  OFFLINE
+}
+
+enum SimActivityType {
+  SMS_IN
+  SMS_OUT
+  CALL_IN
+  CALL_OUT
+  DATA_SESSION
+}
+
+enum MarketingChannel {
+  SMS
+  EMAIL
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model Employee {
@@ -119,16 +157,21 @@ model Employee {
   manager         Employee?      @relation("EmployeeManager", fields: [managerId], references: [id])
   subordinates    Employee[]     @relation("EmployeeManager")
 
-  device          Device?
-  gpsTracks       GpsTrack[]
-  messages        Message[]
-  sales           Sale[]
-  contracts       Contract[]
-  violations      Violation[]
-  alerts          Alert[]
+  device            Device?
+  gpsTracks         GpsTrack[]
+  gpsAnomalies      GpsAnomaly[]
+  messages          Message[]
+  sales             Sale[]
+  contracts         Contract[]
+  violations        Violation[]
+  alerts            Alert[]
+  simActivities     SimActivity[]
+  appActivities     AppActivity[]
+  marketingMessages MarketingMessage[]
+  integrityRecords  IntegrityRecord[]
 
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([role])
   @@index([status])
@@ -137,30 +180,38 @@ model Employee {
 }
 
 model Device {
-  id             String       @id @default(cuid())
-  imei           String       @unique
-  serialNumber   String       @unique
-  model          String
-  androidVersion String
-  appVersion     String?
-  status         DeviceStatus @default(ACTIVE)
-  employeeId     String?      @unique
-  employee       Employee?    @relation(fields: [employeeId], references: [id])
-  lastSeenAt     DateTime?
-  lastIp         String?
-  mdmEnrolled    Boolean      @default(false)
-  mdmProfileId   String?
-  mdmEnrolledAt  DateTime?
-  batteryLevel   Int?
-  storageUsedMb  Int?
-  totalStorageMb Int?
-  installedApps  Json?
-  policyVersion  Int          @default(0)
+  id              String       @id @default(cuid())
+  imei            String       @unique
+  androidId       String?      @unique
+  serialNumber    String       @unique
+  fingerprint     String?
+  model           String
+  androidVersion  String
+  appVersion      String?
+  status          DeviceStatus @default(ACTIVE)
+  employeeId      String?      @unique
+  employee        Employee?    @relation(fields: [employeeId], references: [id])
+  lastSeenAt      DateTime?
+  lastIp          String?
+  mdmEnrolled     Boolean      @default(false)
+  mdmEnrolledAt   DateTime?
+  linkedAt        DateTime?
+  deviceTokenHash String?
+  provisionToken  String?
+  batteryLevel    Int?
+  storageUsedMb   Int?
+  totalStorageMb  Int?
+  installedApps   Json?
+  policyVersion   Int          @default(0)
 
-  gpsTracks      GpsTrack[]
+  gpsTracks         GpsTrack[]
+  gpsAnomalies      GpsAnomaly[]
+  simActivities     SimActivity[]
+  appActivities     AppActivity[]
+  marketingMessages MarketingMessage[]
 
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([mdmEnrolled])
@@ -172,59 +223,66 @@ model Message {
   whatsappMessageId String?          @unique
   employeeId        String
   employee          Employee         @relation(fields: [employeeId], references: [id])
+  deviceId          String?
   contactPhone      String
   contactName       String?
   direction         MessageDirection
   type              MessageType
   content           String?
   mediaUrl          String?
+  mediaLocalPath    String?
   mediaHash         String?
   mediaMimeType     String?
   mediaSizeBytes    BigInt?
   timestamp         DateTime
+  messageStatus     String?
   isGroupMessage    Boolean          @default(false)
   groupId           String?
   groupName         String?
   isFlagged         Boolean          @default(false)
   flagReason        String?
   flaggedAt         DateTime?
+  deletedAt         DateTime?
+  deletedDetectedAt DateTime?
 
-  evidenceFiles     EvidenceFile[]
+  evidenceFiles EvidenceFile[]
 
-  createdAt         DateTime         @default(now())
+  createdAt DateTime @default(now())
 
   @@index([employeeId])
   @@index([timestamp])
   @@index([isFlagged])
   @@index([contactPhone])
   @@index([groupId])
+  @@index([deletedAt])
 }
 
 model Sale {
-  id            String         @id @default(cuid())
-  saleNumber    String         @unique
+  id            String  @id @default(cuid())
+  saleNumber    String  @unique
   employeeId    String
-  employee      Employee       @relation(fields: [employeeId], references: [id])
+  employee      Employee @relation(fields: [employeeId], references: [id])
   clientName    String
   clientPhone   String?
-  amount        Decimal        @db.Decimal(10, 2)
-  currency      String         @default("MAD")
+  amount        Decimal @db.Decimal(10, 2)
+  currency      String  @default("MAD")
   productLine   String?
   description   String?
   saleDate      DateTime
   deliveryDate  DateTime?
   deliveredAt   DateTime?
-  isPaid        Boolean        @default(false)
+  isPaid        Boolean  @default(false)
   paymentDate   DateTime?
   paymentMethod String?
-  latitude      Decimal?       @db.Decimal(10, 8)
-  longitude     Decimal?       @db.Decimal(11, 8)
+  detectedFrom  String?
+  latitude      Decimal? @db.Decimal(10, 8)
+  longitude     Decimal? @db.Decimal(11, 8)
   notes         String?
 
   evidenceFiles EvidenceFile[]
 
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([employeeId])
   @@index([saleDate])
@@ -232,67 +290,223 @@ model Sale {
 }
 
 model GpsTrack {
-  id          String   @id @default(cuid())
-  employeeId  String
-  employee    Employee @relation(fields: [employeeId], references: [id])
-  deviceId    String
-  device      Device   @relation(fields: [deviceId], references: [id])
-  latitude    Decimal  @db.Decimal(10, 8)
-  longitude   Decimal  @db.Decimal(11, 8)
-  accuracy    Float?
-  altitude    Float?
-  speed       Float?
-  heading     Float?
-  address     String?
-  timestamp   DateTime
-  isAnomaly   Boolean  @default(false)
-  anomalyNote String?
-  batchId     String?
+  id           String   @id @default(cuid())
+  employeeId   String
+  employee     Employee @relation(fields: [employeeId], references: [id])
+  deviceId     String
+  device       Device   @relation(fields: [deviceId], references: [id])
+  latitude     Decimal  @db.Decimal(10, 8)
+  longitude    Decimal  @db.Decimal(11, 8)
+  accuracy     Float?
+  altitude     Float?
+  speed        Float?
+  heading      Float?
+  batteryLevel Int?
+  address      String?
+  timestamp    DateTime
+  isAnomaly    Boolean  @default(false)
+  anomalyNote  String?
+  batchId      String?
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([employeeId, timestamp])
   @@index([deviceId])
   @@index([timestamp])
   @@index([isAnomaly])
-  @@index([batchId])
+}
+
+model GpsAnomaly {
+  id         String         @id @default(cuid())
+  deviceId   String
+  device     Device         @relation(fields: [deviceId], references: [id])
+  employeeId String
+  employee   Employee       @relation(fields: [employeeId], references: [id])
+  type       GpsAnomalyType
+  startedAt  DateTime
+  resolvedAt DateTime?
+  latitude   Decimal?       @db.Decimal(10, 8)
+  longitude  Decimal?       @db.Decimal(11, 8)
+  alertId    String?
+  metadata   Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([deviceId])
+  @@index([employeeId])
+  @@index([type])
+  @@index([startedAt])
+}
+
+model KnownLocation {
+  id           String            @id @default(cuid())
+  name         String
+  type         KnownLocationType
+  latitude     Decimal           @db.Decimal(10, 8)
+  longitude    Decimal           @db.Decimal(11, 8)
+  radiusMeters Int               @default(100)
+  employeeIds  String[]
+  isActive     Boolean           @default(true)
+  createdBy    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+  @@index([isActive])
+}
+
+model SimActivity {
+  id            String          @id @default(cuid())
+  deviceId      String
+  device        Device          @relation(fields: [deviceId], references: [id])
+  employeeId    String
+  employee      Employee        @relation(fields: [employeeId], references: [id])
+  simSlot       Int
+  simNumber     String?
+  activityType  SimActivityType
+  contactNumber String?
+  content       String?
+  durationSecs  Int?
+  timestamp     DateTime
+  isFlagged     Boolean         @default(false)
+  flagReason    String?
+  evidencePath  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([deviceId, timestamp])
+  @@index([employeeId])
+  @@index([isFlagged])
+  @@index([simSlot])
+  @@index([activityType])
+}
+
+model AppActivity {
+  id           String   @id @default(cuid())
+  deviceId     String
+  device       Device   @relation(fields: [deviceId], references: [id])
+  employeeId   String
+  employee     Employee @relation(fields: [employeeId], references: [id])
+  packageName  String
+  appLabel     String?
+  startedAt    DateTime
+  endedAt      DateTime?
+  durationSecs Int?
+  isSuspicious Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([deviceId, startedAt])
+  @@index([packageName])
+  @@index([isSuspicious])
+  @@index([employeeId])
+}
+
+model MarketingMessage {
+  id             String           @id @default(cuid())
+  deviceId       String
+  device         Device           @relation(fields: [deviceId], references: [id])
+  employeeId     String
+  employee       Employee         @relation(fields: [employeeId], references: [id])
+  channel        MarketingChannel
+  recipients     String[]
+  content        String
+  subject        String?
+  sentAt         DateTime
+  recipientCount Int
+  isFlagged      Boolean          @default(false)
+  flagReason     String?
+  sha256Hash     String
+  evidencePath   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([deviceId])
+  @@index([employeeId])
+  @@index([sentAt])
+  @@index([isFlagged])
 }
 
 model ContentSubmission {
-  id               String        @id @default(cuid())
-  submissionNumber String        @unique
-  creatorId        String
-  creator          Creator       @relation(fields: [creatorId], references: [id])
-  platform         String
-  contentType      String
-  title            String?
-  description      String?
-  fileUrl          String
-  fileHash         String
-  thumbnailUrl     String?
-  durationSeconds  Int?
-  status           ContentStatus @default(PENDING)
-  reviewedBy       String?
-  reviewedAt       DateTime?
-  reviewNotes      String?
-  publishedUrl     String?
-  publishedAt      DateTime?
-  viewCount        BigInt?
-  likeCount        BigInt?
-  shareCount       BigInt?
-  commentsCount    BigInt?
-  engagementRate   Decimal?      @db.Decimal(5, 2)
-  lastStatsSync    DateTime?
+  id                    String        @id @default(cuid())
+  submissionNumber      String        @unique
+  creatorId             String
+  creator               Creator       @relation(fields: [creatorId], references: [id])
+  platform              String
+  contentType           String
+  caption               String?
+  title                 String?
+  description           String?
+  fileUrl               String
+  fileHash              String
+  thumbnailUrl          String?
+  durationSeconds       Int?
+  status                ContentStatus @default(PENDING)
+  autoCheckResult       Json?
+  reviewedBy            String?
+  reviewedAt            DateTime?
+  reviewNotes           String?
+  publishToken          String?
+  publishTokenExpiresAt DateTime?
+  publishedUrl          String?
+  publishedAt           DateTime?
+  deletedExternallyAt   DateTime?
+  viewCount             BigInt?
+  likeCount             BigInt?
+  shareCount            BigInt?
+  commentsCount         BigInt?
+  engagementRate        Decimal?      @db.Decimal(5, 2)
+  lastStatsSync         DateTime?
 
-  evidenceFiles    EvidenceFile[]
-  commissions      CommissionLine[]
+  evidenceFiles      EvidenceFile[]
+  commissions        CommissionLine[]
+  publishTokenRecord PublishToken?
 
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([creatorId])
   @@index([status])
   @@index([platform])
+}
+
+model PublishToken {
+  id           String            @id @default(cuid())
+  submissionId String            @unique
+  submission   ContentSubmission @relation(fields: [submissionId], references: [id])
+  token        String            @unique
+  expiresAt    DateTime
+  usedAt       DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model ContentBlacklist {
+  id        String   @id @default(cuid())
+  term      String   @unique
+  category  String
+  addedBy   String?
+
+  createdAt DateTime @default(now())
+}
+
+model RawWebhookEvent {
+  id              String    @id @default(cuid())
+  sha256Hash      String    @unique
+  event           String
+  instance        String
+  rawPayload      Json
+  payloadBytes    Int
+  receivedAt      DateTime  @default(now())
+  processedAt     DateTime?
+  processingError String?
+
+  @@index([event])
+  @@index([receivedAt])
 }
 
 model EvidenceFile {
@@ -303,7 +517,8 @@ model EvidenceFile {
   sizeBytes           BigInt
   sha256Hash          String             @unique
   storagePath         String
-  storageProvider     String             @default("local")
+  storageProvider     String             @default("minio")
+  bucketName          String             @default("fieldops-evidence")
   messageId           String?
   message             Message?           @relation(fields: [messageId], references: [id])
   saleId              String?
@@ -313,7 +528,7 @@ model EvidenceFile {
   uploadedBy          String?
   notes               String?
 
-  createdAt           DateTime           @default(now())
+  createdAt DateTime @default(now())
 
   @@index([sha256Hash])
   @@index([messageId])
@@ -322,46 +537,50 @@ model EvidenceFile {
 }
 
 model Creator {
-  id              String              @id @default(cuid())
-  employeeId      String?             @unique
+  id              String  @id @default(cuid())
+  employeeId      String? @unique
   firstName       String
   lastName        String
-  phone           String              @unique
+  phone           String  @unique
   email           String?
   tiktokHandle    String?
   instagramHandle String?
   youtubeHandle   String?
-  commissionRate  Decimal             @db.Decimal(5, 2)
-  status          String              @default("ACTIVE")
-  totalEarnings   Decimal             @db.Decimal(12, 2) @default(0)
+  waNumber        String? @unique
+  utmCode         String? @unique
+  commissionRate  Decimal @db.Decimal(5, 2)
+  brandScore      Int     @default(100)
+  status          String  @default("ACTIVE")
+  totalEarnings   Decimal @db.Decimal(12, 2) @default(0)
 
-  submissions     ContentSubmission[]
-  commissions     Commission[]
+  submissions ContentSubmission[]
+  commissions Commission[]
 
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
+  @@index([utmCode])
 }
 
 model Commission {
-  id          String           @id @default(cuid())
+  id          String  @id @default(cuid())
   creatorId   String
-  creator     Creator          @relation(fields: [creatorId], references: [id])
+  creator     Creator @relation(fields: [creatorId], references: [id])
   period      String
-  baseAmount  Decimal          @db.Decimal(10, 2)
-  bonusAmount Decimal          @db.Decimal(10, 2) @default(0)
-  totalAmount Decimal          @db.Decimal(10, 2)
-  currency    String           @default("MAD")
-  isPaid      Boolean          @default(false)
+  baseAmount  Decimal @db.Decimal(10, 2)
+  bonusAmount Decimal @db.Decimal(10, 2) @default(0)
+  totalAmount Decimal @db.Decimal(10, 2)
+  currency    String  @default("MAD")
+  isPaid      Boolean @default(false)
   paidAt      DateTime?
   paymentRef  String?
   notes       String?
 
-  lines       CommissionLine[]
+  lines CommissionLine[]
 
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([creatorId])
   @@index([period])
@@ -379,30 +598,52 @@ model CommissionLine {
   metric              String?
   metricValue         BigInt?
 
-  createdAt           DateTime           @default(now())
+  createdAt DateTime @default(now())
 
   @@index([commissionId])
 }
 
-model Alert {
-  id             String        @id @default(cuid())
-  type           AlertType
-  severity       AlertSeverity
-  status         AlertStatus   @default(OPEN)
-  employeeId     String?
-  employee       Employee?     @relation(fields: [employeeId], references: [id])
-  title          String
-  description    String
-  metadata       Json?
-  notifiedAt     DateTime?
-  acknowledgedBy String?
-  acknowledgedAt DateTime?
-  resolvedBy     String?
-  resolvedAt     DateTime?
-  resolutionNote String?
+model IntegrityRecord {
+  id              String   @id @default(cuid())
+  employeeId      String
+  employee        Employee @relation(fields: [employeeId], references: [id])
+  period          String
+  violationCount  Int      @default(0)
+  bonusAmount     Decimal  @db.Decimal(10, 2) @default(0)
+  integrityPoints Int      @default(0)
+  bonusPaid       Boolean  @default(false)
+  bonusPaidAt     DateTime?
+  notes           String?
 
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt DateTime @default(now())
+
+  @@unique([employeeId, period])
+  @@index([employeeId])
+  @@index([period])
+}
+
+model Alert {
+  id                String        @id @default(cuid())
+  type              AlertType
+  severity          AlertSeverity
+  status            AlertStatus   @default(OPEN)
+  employeeId        String?
+  employee          Employee?     @relation(fields: [employeeId], references: [id])
+  deviceId          String?
+  title             String
+  description       String
+  evidenceLinks     String[]
+  recommendedAction String?
+  metadata          Json?
+  notifiedAt        DateTime?
+  acknowledgedBy    String?
+  acknowledgedAt    DateTime?
+  resolvedBy        String?
+  resolvedAt        DateTime?
+  resolutionNote    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([type])
   @@index([severity])
@@ -428,8 +669,8 @@ model Contract {
   signedAt       DateTime?
   renewalAlerted Boolean      @default(false)
 
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([employeeId])
   @@index([endDate])
@@ -448,8 +689,8 @@ model Violation {
   resolvedAt  DateTime?
   resolution  String?
 
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([employeeId])
   @@index([type])
@@ -467,26 +708,8 @@ model Geofence {
   zones        String[]
   createdBy    String?
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-
-model MdmPolicy {
-  id              String   @id @default(cuid())
-  name            String   @unique
-  version         Int      @default(1)
-  allowedApps     String[]
-  blockedApps     String[]
-  wifiNetworks    Json?
-  screenLockSecs  Int      @default(300)
-  requireEncrypt  Boolean  @default(true)
-  disableCamera   Boolean  @default(false)
-  disableBluetooth Boolean @default(false)
-  policyJson      Json
-  isActive        Boolean  @default(true)
-
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model AuditLog {
@@ -501,7 +724,7 @@ model AuditLog {
   ip         String?
   userAgent  String?
 
-  createdAt  DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([actorId])
   @@index([resource, resourceId])
