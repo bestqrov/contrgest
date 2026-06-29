@@ -1,6 +1,10 @@
 import { Queue, Worker, type Job } from 'bullmq';
 import { QUEUES } from '@field-ops/shared';
 
+function queueName(name: string): string {
+  return name.replace(/:/g, '-');
+}
+
 function redisConnection() {
   const url = new URL(process.env.REDIS_URL ?? 'redis://localhost:6379');
   return {
@@ -11,18 +15,18 @@ function redisConnection() {
   };
 }
 
-export const waEventsQueue = new Queue(QUEUES.WA_EVENTS, { connection: redisConnection() });
-export const waMediaQueue = new Queue(QUEUES.WA_MEDIA_DOWNLOAD, { connection: redisConnection() });
+export const waEventsQueue = new Queue(queueName(QUEUES.WA_EVENTS), { connection: redisConnection() });
+export const waMediaQueue = new Queue(queueName(QUEUES.WA_MEDIA_DOWNLOAD), { connection: redisConnection() });
 
 export function createEventsWorker(processor: (job: Job) => Promise<void>): Worker {
-  return new Worker(QUEUES.WA_EVENTS, processor, {
+  return new Worker(queueName(QUEUES.WA_EVENTS), processor, {
     connection: redisConnection(),
     concurrency: 5,
   });
 }
 
 export function createMediaWorker(processor: (job: Job) => Promise<void>): Worker {
-  return new Worker(QUEUES.WA_MEDIA_DOWNLOAD, processor, {
+  return new Worker(queueName(QUEUES.WA_MEDIA_DOWNLOAD), processor, {
     connection: redisConnection(),
     concurrency: 3,
   });

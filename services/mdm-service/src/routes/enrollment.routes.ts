@@ -7,7 +7,23 @@ import Redis from 'ioredis';
 const logger = createLogger('mdm-service:enrollment');
 export const enrollmentRouter: Router = Router();
 
-const redis = new Redis(process.env.REDIS_URL!);
+function resolveRedisConnection() {
+  const host = process.env.REDIS_HOST;
+  const port = parseInt(process.env.REDIS_PORT ?? '6379', 10);
+  const password = process.env.REDIS_PASSWORD || undefined;
+  const db = parseInt(new URL(process.env.REDIS_URL ?? 'redis://localhost:6379/0').pathname.replace('/', '') || '0', 10);
+
+  if (host) {
+    return { host, port, password, db };
+  }
+
+  const rawUrl = process.env.REDIS_URL ?? 'redis://localhost:6379/0';
+  return rawUrl.startsWith('redis://') || rawUrl.startsWith('rediss://')
+    ? rawUrl
+    : `redis://${rawUrl}`;
+}
+
+const redis = new Redis(resolveRedisConnection() as any);
 const TOKEN_EXPIRY_HOURS = parseInt(process.env.MDM_ENROLLMENT_TOKEN_EXPIRES_HOURS ?? '48', 10);
 
 const enrollSchema = z.object({
