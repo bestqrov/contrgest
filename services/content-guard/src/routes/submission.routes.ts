@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
-import { prisma } from '@field-ops/db';
+import { prisma, ContentStatus } from '@field-ops/db';
 import { sha256Hex, createLogger } from '@field-ops/shared';
 import axios from 'axios';
 
 const logger = createLogger('content-guard:submission');
-export const submissionRouter = Router();
+export const submissionRouter: Router = Router();
 
 const MAX_MB = parseInt(process.env.MAX_CONTENT_FILE_SIZE_MB ?? '500', 10);
 const ALLOWED_MIMES = (process.env.ALLOWED_CONTENT_MIME_TYPES ?? 'video/mp4,image/jpeg,image/png,image/webp').split(',').map((s) => s.trim());
@@ -31,6 +31,8 @@ const submitSchema = z.object({
   description: z.string().optional(),
   durationSeconds: z.coerce.number().optional(),
 });
+
+const contentStatusQuerySchema = z.nativeEnum(ContentStatus);
 
 submissionRouter.post('/', upload.single('content'), async (req: Request, res: Response) => {
   try {
@@ -121,7 +123,9 @@ submissionRouter.post('/', upload.single('content'), async (req: Request, res: R
 submissionRouter.get('/', async (req: Request, res: Response) => {
   const secret = req.headers['x-internal-secret'];
   if (secret !== process.env.INTERNAL_SERVICE_SECRET) {
-    const creatorId = req.query.creatorId as string | undefined;
+    const creatorId = Array.isArray(req.query.creatorId)
+      ? req.query.creatorId[0]
+      : req.query.creatorId;
     if (!creatorId) {
       res.status(400).json({ error: 'creatorId required' });
       return;
@@ -136,8 +140,11 @@ submissionRouter.get('/', async (req: Request, res: Response) => {
     return;
   }
 
+  const rawStatus = Array.isArray(req.query.status) ? req.query.status[0] : req.query.status;
+  const parsedStatus = rawStatus ? contentStatusQuerySchema.safeParse(rawStatus) : null;
+
   const submissions = await prisma.contentSubmission.findMany({
-    where: req.query.status ? { status: req.query.status as string } : {},
+    where: parsedStatus?.success ? { status: parsedStatus.data } : {},
     orderBy: { createdAt: 'desc' },
     take: 100,
     include: { creator: { select: { firstName: true, lastName: true } } },

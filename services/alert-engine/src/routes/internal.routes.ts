@@ -4,7 +4,7 @@ import { createLogger } from '@field-ops/shared';
 import { prisma } from '@field-ops/db';
 
 const logger = createLogger('alert-engine:internal');
-export const internalRouter = Router();
+export const internalRouter: Router = Router();
 
 internalRouter.use((req: Request, res: Response, next) => {
   if (req.headers['x-internal-secret'] !== process.env.INTERNAL_SERVICE_SECRET) {
