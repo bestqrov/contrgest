@@ -4,7 +4,7 @@ import { prisma, MarketingChannel } from '@field-ops/db';
 import { authenticateDevice, authenticate, requireRole } from '../middleware/auth.middleware';
 import { parsePagination, buildMeta, sha256Hex } from '@field-ops/shared';
 
-export const marketingMessageRouter = Router();
+export const marketingMessageRouter: Router = Router();
 
 const logSchema = z.object({
   deviceId: z.string(),

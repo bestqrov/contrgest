@@ -1,22 +1,30 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { prisma, AlertStatus } from '@field-ops/db';
+import { prisma, AlertStatus, AlertType, AlertSeverity } from '@field-ops/db';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { AppError } from '../middleware/error.middleware';
 import { parsePagination, buildMeta, ERROR_CODES } from '@field-ops/shared';
 
-export const alertRouter = Router();
+export const alertRouter: Router = Router();
 alertRouter.use(authenticate, requireRole('ADMIN'));
+
+const getParam = (value: string | string[] | undefined): string | undefined =>
+  Array.isArray(value) ? value[0] : value;
 
 alertRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { skip, take, page, limit } = parsePagination(req.query);
 
+    const status = getParam(req.query.status as string | string[] | undefined);
+    const severity = getParam(req.query.severity as string | string[] | undefined);
+    const type = getParam(req.query.type as string | string[] | undefined);
+    const employeeId = getParam(req.query.employeeId as string | string[] | undefined);
+
     const where = {
-      ...(req.query.status ? { status: req.query.status as AlertStatus } : { status: { not: 'DISMISSED' as AlertStatus } }),
-      ...(req.query.severity ? { severity: req.query.severity as string } : {}),
-      ...(req.query.type ? { type: req.query.type as string } : {}),
-      ...(req.query.employeeId ? { employeeId: req.query.employeeId as string } : {}),
+      ...(status ? { status: status as AlertStatus } : { status: { not: AlertStatus.DISMISSED } }),
+      ...(severity ? { severity: severity as AlertSeverity } : {}),
+      ...(type ? { type: type as AlertType } : {}),
+      ...(employeeId ? { employeeId } : {}),
     };
 
     const [alerts, total] = await Promise.all([
@@ -38,11 +46,12 @@ alertRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
 
 alertRouter.patch('/:id/acknowledge', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const alert = await prisma.alert.findUnique({ where: { id: req.params.id } });
+    const alertId = getParam(req.params.id as string | string[] | undefined);
+    const alert = await prisma.alert.findUnique({ where: { id: alertId } });
     if (!alert) throw new AppError(404, ERROR_CODES.NOT_FOUND, 'Alert not found');
 
     const updated = await prisma.alert.update({
-      where: { id: req.params.id },
+      where: { id: alertId },
       data: {
         status: AlertStatus.ACKNOWLEDGED,
         acknowledgedBy: req.employee!.id,
@@ -59,9 +68,10 @@ alertRouter.patch('/:id/acknowledge', async (req: Request, res: Response, next: 
 alertRouter.patch('/:id/resolve', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { resolutionNote } = z.object({ resolutionNote: z.string().optional() }).parse(req.body);
+    const alertId = getParam(req.params.id as string | string[] | undefined);
 
     const updated = await prisma.alert.update({
-      where: { id: req.params.id },
+      where: { id: alertId },
       data: {
         status: AlertStatus.RESOLVED,
         resolvedBy: req.employee!.id,

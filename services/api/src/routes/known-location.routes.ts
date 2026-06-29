@@ -5,8 +5,11 @@ import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { AppError } from '../middleware/error.middleware';
 import { ERROR_CODES } from '@field-ops/shared';
 
-export const knownLocationRouter = Router();
+export const knownLocationRouter: Router = Router();
 knownLocationRouter.use(authenticate, requireRole('ADMIN'));
+
+const getParam = (value: string | string[] | undefined): string | undefined =>
+  Array.isArray(value) ? value[0] : value;
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
@@ -48,12 +51,13 @@ knownLocationRouter.post('/', async (req: Request, res: Response, next: NextFunc
 
 knownLocationRouter.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const existing = await prisma.knownLocation.findUnique({ where: { id: String(req.params.id) } });
+    const locationId = getParam(req.params.id as string | string[] | undefined);
+    const existing = await prisma.knownLocation.findUnique({ where: { id: locationId } });
     if (!existing) throw new AppError(404, ERROR_CODES.NOT_FOUND, 'Location not found');
 
     const body = createSchema.partial().parse(req.body);
     const updated = await prisma.knownLocation.update({
-      where: { id: String(req.params.id) },
+      where: { id: locationId },
       data: {
         ...body,
         ...(body.latitude !== undefined ? { latitude: body.latitude.toString() } : {}),
@@ -68,10 +72,11 @@ knownLocationRouter.patch('/:id', async (req: Request, res: Response, next: Next
 
 knownLocationRouter.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const existing = await prisma.knownLocation.findUnique({ where: { id: String(req.params.id) } });
+    const locationId = getParam(req.params.id as string | string[] | undefined);
+    const existing = await prisma.knownLocation.findUnique({ where: { id: locationId } });
     if (!existing) throw new AppError(404, ERROR_CODES.NOT_FOUND, 'Location not found');
 
-    await prisma.knownLocation.update({ where: { id: String(req.params.id) }, data: { isActive: false } });
+    await prisma.knownLocation.update({ where: { id: locationId }, data: { isActive: false } });
     res.json({ success: true });
   } catch (err) {
     next(err);

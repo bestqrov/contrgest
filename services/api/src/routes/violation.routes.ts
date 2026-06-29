@@ -4,8 +4,11 @@ import { prisma, ViolationType, AlertSeverity } from '@field-ops/db';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { parsePagination, buildMeta } from '@field-ops/shared';
 
-export const violationRouter = Router();
+export const violationRouter: Router = Router();
 violationRouter.use(authenticate, requireRole('ADMIN'));
+
+const getParam = (value: string | string[] | undefined): string | undefined =>
+  Array.isArray(value) ? value[0] : value;
 
 const createViolationSchema = z.object({
   employeeId: z.string(),
@@ -19,7 +22,8 @@ const createViolationSchema = z.object({
 violationRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { skip, take, page, limit } = parsePagination(req.query);
-    const where = req.query.employeeId ? { employeeId: req.query.employeeId as string } : {};
+    const employeeId = getParam(req.query.employeeId as string | string[] | undefined);
+    const where = employeeId ? { employeeId } : {};
 
     const [violations, total] = await Promise.all([
       prisma.violation.findMany({

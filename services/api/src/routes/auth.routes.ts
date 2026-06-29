@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { loginWithPhone, refreshAccessToken } from '../services/auth.service';
 import { authenticate } from '../middleware/auth.middleware';
 
-export const authRouter = Router();
+export const authRouter: Router = Router();
 
 const loginSchema = z.object({
   phone: z.string().min(10),

@@ -5,8 +5,11 @@ import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { AppError } from '../middleware/error.middleware';
 import { parsePagination, buildMeta, ERROR_CODES } from '@field-ops/shared';
 
-export const salesRouter = Router();
+export const salesRouter: Router = Router();
 salesRouter.use(authenticate);
+
+const getParam = (value: string | string[] | undefined): string | undefined =>
+  Array.isArray(value) ? value[0] : value;
 
 const createSaleSchema = z.object({
   saleNumber: z.string().min(1),
@@ -84,11 +87,12 @@ salesRouter.post('/', async (req: Request, res: Response, next: NextFunction) =>
 
 salesRouter.patch('/:id/paid', requireRole('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const sale = await prisma.sale.findUnique({ where: { id: req.params.id } });
+    const saleId = getParam(req.params.id as string | string[] | undefined);
+    const sale = await prisma.sale.findUnique({ where: { id: saleId } });
     if (!sale) throw new AppError(404, ERROR_CODES.NOT_FOUND, 'Sale not found');
 
     const updated = await prisma.sale.update({
-      where: { id: req.params.id },
+      where: { id: saleId },
       data: { isPaid: true, paymentDate: new Date(), paymentMethod: req.body.paymentMethod },
     });
 

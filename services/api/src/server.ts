@@ -24,7 +24,7 @@ import { rateLimiter } from './middleware/rate-limit.middleware';
 import { initSocketIO } from './socket';
 
 const logger = createLogger('api');
-const app = express();
+const app: express.Express = express();
 const PORT = parseInt(process.env.PORT ?? '4000', 10);
 
 app.set('trust proxy', 1);

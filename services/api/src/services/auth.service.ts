@@ -1,4 +1,3 @@
-import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma, EmployeeStatus } from '@field-ops/db';
 import { AppError } from '../middleware/error.middleware';
@@ -7,7 +6,7 @@ import type { AuthTokens } from '@field-ops/shared';
 
 export async function loginWithPhone(
   phone: string,
-  password: string,
+  _password: string,
 ): Promise<AuthTokens & { employee: { id: string; role: string; firstName: string; lastName: string } }> {
   const employee = await prisma.employee.findUnique({
     where: { phone },
@@ -47,16 +46,23 @@ export async function loginWithPhone(
 }
 
 export function issueTokens(employeeId: string, employeeNumber: string, role: string): AuthTokens {
+  const accessTokenOptions: jwt.SignOptions = {
+    expiresIn: (process.env.JWT_EXPIRES_IN ?? '15m') as jwt.SignOptions['expiresIn'],
+  };
+  const refreshTokenOptions: jwt.SignOptions = {
+    expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN ?? '7d') as jwt.SignOptions['expiresIn'],
+  };
+
   const accessToken = jwt.sign(
     { sub: employeeNumber, employeeId, role },
     process.env.JWT_SECRET!,
-    { expiresIn: process.env.JWT_EXPIRES_IN ?? '15m' },
+    accessTokenOptions,
   );
 
   const refreshToken = jwt.sign(
     { sub: employeeNumber, employeeId, role, type: 'refresh' },
     process.env.JWT_REFRESH_SECRET!,
-    { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d' },
+    refreshTokenOptions,
   );
 
   return {

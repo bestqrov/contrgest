@@ -5,8 +5,11 @@ import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { AppError } from '../middleware/error.middleware';
 import { parsePagination, buildMeta, ERROR_CODES } from '@field-ops/shared';
 
-export const employeeRouter = Router();
+export const employeeRouter: Router = Router();
 employeeRouter.use(authenticate);
+
+const getParam = (value: string | string[] | undefined): string | undefined =>
+  Array.isArray(value) ? value[0] : value;
 
 const createEmployeeSchema = z.object({
   employeeNumber: z.string().min(1),
@@ -72,8 +75,9 @@ employeeRouter.get('/', requireRole('ADMIN'), async (req: Request, res: Response
 
 employeeRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const employeeId = getParam(req.params.id as string | string[] | undefined);
     const employee = await prisma.employee.findUnique({
-      where: { id: req.params.id },
+      where: { id: employeeId },
       include: {
         device: true,
         contracts: { orderBy: { startDate: 'desc' }, take: 1 },
@@ -131,8 +135,9 @@ employeeRouter.post('/', requireRole('ADMIN'), async (req: Request, res: Respons
 employeeRouter.patch('/:id', requireRole('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = updateEmployeeSchema.parse(req.body);
+    const employeeId = getParam(req.params.id as string | string[] | undefined);
 
-    const existing = await prisma.employee.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.employee.findUnique({ where: { id: employeeId } });
     if (!existing) {
       throw new AppError(404, ERROR_CODES.NOT_FOUND, 'Employee not found');
     }
@@ -142,7 +147,7 @@ employeeRouter.patch('/:id', requireRole('ADMIN'), async (req: Request, res: Res
     if (body.terminationDate) data.terminationDate = new Date(body.terminationDate);
 
     const updated = await prisma.employee.update({
-      where: { id: req.params.id },
+      where: { id: employeeId },
       data,
     });
 
@@ -152,7 +157,7 @@ employeeRouter.patch('/:id', requireRole('ADMIN'), async (req: Request, res: Res
         actorType: 'EMPLOYEE',
         action: 'UPDATE',
         resource: 'Employee',
-        resourceId: req.params.id,
+        resourceId: employeeId,
         oldValue: existing,
         newValue: body,
       },
@@ -166,7 +171,7 @@ employeeRouter.patch('/:id', requireRole('ADMIN'), async (req: Request, res: Res
 
 employeeRouter.get('/:id/stats', requireRole('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id as string | string[] | undefined);
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // 30 days
 
     const [salesCount, salesTotal, messageCount, violationCount, lastTrack] = await Promise.all([
@@ -181,7 +186,7 @@ employeeRouter.get('/:id/stats', requireRole('ADMIN'), async (req: Request, res:
       success: true,
       data: {
         period: '30d',
-        sales: { count: salesCount, total: salesTotal._sum.amount ?? 0 },
+        sales: { count: salesCount, total: salesTotal._sum?.amount ?? 0 },
         messages: messageCount,
         violations: violationCount,
         lastLocation: lastTrack ? { lat: lastTrack.latitude, lon: lastTrack.longitude, at: lastTrack.timestamp } : null,

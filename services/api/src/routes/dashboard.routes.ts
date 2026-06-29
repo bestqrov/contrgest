@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { prisma, AlertStatus, EmployeeStatus } from '@field-ops/db';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
 
-export const dashboardRouter = Router();
+export const dashboardRouter: Router = Router();
 dashboardRouter.use(authenticate, requireRole('ADMIN'));
 
 dashboardRouter.get('/overview', async (_req: Request, res: Response, next: NextFunction) => {
@@ -60,8 +60,16 @@ dashboardRouter.get('/activity-feed', async (req: Request, res: Response, next: 
       prisma.sale.findMany({
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: { employee: { select: { firstName: true, lastName: true } } },
-        select: { id: true, saleNumber: true, amount: true, currency: true, saleDate: true, createdAt: true, clientName: true, employee: true },
+        select: {
+          id: true,
+          saleNumber: true,
+          amount: true,
+          currency: true,
+          saleDate: true,
+          createdAt: true,
+          clientName: true,
+          employee: { select: { firstName: true, lastName: true } },
+        },
       }),
       prisma.alert.findMany({
         take: limit,
@@ -71,8 +79,15 @@ dashboardRouter.get('/activity-feed', async (req: Request, res: Response, next: 
       prisma.violation.findMany({
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: { employee: { select: { firstName: true, lastName: true } } },
-        select: { id: true, type: true, severity: true, description: true, occurredAt: true, createdAt: true, employee: true },
+        select: {
+          id: true,
+          type: true,
+          severity: true,
+          description: true,
+          occurredAt: true,
+          createdAt: true,
+          employee: { select: { firstName: true, lastName: true } },
+        },
       }),
     ]);
 

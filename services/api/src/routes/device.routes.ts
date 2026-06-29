@@ -5,8 +5,11 @@ import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { AppError } from '../middleware/error.middleware';
 import { parsePagination, buildMeta, ERROR_CODES } from '@field-ops/shared';
 
-export const deviceRouter = Router();
+export const deviceRouter: Router = Router();
 deviceRouter.use(authenticate, requireRole('ADMIN'));
+
+const getParam = (value: string | string[] | undefined): string | undefined =>
+  Array.isArray(value) ? value[0] : value;
 
 const createDeviceSchema = z.object({
   imei: z.string().length(15),
@@ -76,13 +79,14 @@ deviceRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
 deviceRouter.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = updateDeviceSchema.parse(req.body);
+    const deviceId = getParam(req.params.id as string | string[] | undefined);
 
-    const device = await prisma.device.findUnique({ where: { id: req.params.id } });
+    const device = await prisma.device.findUnique({ where: { id: deviceId } });
     if (!device) throw new AppError(404, ERROR_CODES.NOT_FOUND, 'Device not found');
 
     if (body.employeeId !== undefined && body.employeeId !== null) {
       const hasDevice = await prisma.device.findFirst({
-        where: { employeeId: body.employeeId, NOT: { id: req.params.id } },
+        where: { employeeId: body.employeeId, NOT: { id: deviceId } },
       });
       if (hasDevice) {
         throw new AppError(409, ERROR_CODES.CONFLICT, 'Employee already has a device assigned');
@@ -90,7 +94,7 @@ deviceRouter.patch('/:id', async (req: Request, res: Response, next: NextFunctio
     }
 
     const updated = await prisma.device.update({
-      where: { id: req.params.id },
+      where: { id: deviceId },
       data: body,
     });
 
@@ -104,9 +108,10 @@ deviceRouter.patch('/:id', async (req: Request, res: Response, next: NextFunctio
 deviceRouter.post('/:id/heartbeat', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { batteryLevel, storageUsedMb, appVersion, installedApps } = req.body;
+    const deviceId = getParam(req.params.id as string | string[] | undefined);
 
     const updated = await prisma.device.update({
-      where: { id: req.params.id },
+      where: { id: deviceId },
       data: {
         lastSeenAt: new Date(),
         lastIp: req.ip,

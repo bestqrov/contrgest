@@ -5,8 +5,11 @@ import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { AppError } from '../middleware/error.middleware';
 import { parsePagination, buildMeta, ERROR_CODES } from '@field-ops/shared';
 
-export const gpsRouter = Router();
+export const gpsRouter: Router = Router();
 gpsRouter.use(authenticate);
+
+const getParam = (value: string | string[] | undefined): string | undefined =>
+  Array.isArray(value) ? value[0] : value;
 
 const trackSchema = z.object({
   latitude: z.number().min(-90).max(90),
@@ -67,7 +70,7 @@ gpsRouter.post('/track', async (req: Request, res: Response, next: NextFunction)
 gpsRouter.get('/history/:employeeId', requireRole('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { skip, take, page, limit } = parsePagination(req.query);
-    const { employeeId } = req.params;
+    const employeeId = getParam(req.params.employeeId as string | string[] | undefined);
     const since = req.query.since ? new Date(req.query.since as string) : new Date(Date.now() - 24 * 60 * 60 * 1000);
     const until = req.query.until ? new Date(req.query.until as string) : new Date();
 

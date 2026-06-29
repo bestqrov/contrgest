@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '@field-ops/db';
 
-export const healthRouter = Router();
+export const healthRouter: Router = Router();
 
 healthRouter.get('/', async (_req: Request, res: Response) => {
   try {

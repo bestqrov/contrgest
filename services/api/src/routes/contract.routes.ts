@@ -5,8 +5,11 @@ import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { AppError } from '../middleware/error.middleware';
 import { parsePagination, buildMeta, ERROR_CODES } from '@field-ops/shared';
 
-export const contractRouter = Router();
+export const contractRouter: Router = Router();
 contractRouter.use(authenticate, requireRole('ADMIN'));
+
+const getParam = (value: string | string[] | undefined): string | undefined =>
+  Array.isArray(value) ? value[0] : value;
 
 const createContractSchema = z.object({
   contractNumber: z.string().min(1),
@@ -65,8 +68,9 @@ contractRouter.post('/', async (req: Request, res: Response, next: NextFunction)
 
 contractRouter.patch('/:id/sign', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const contractId = getParam(req.params.id as string | string[] | undefined);
     const updated = await prisma.contract.update({
-      where: { id: req.params.id },
+      where: { id: contractId },
       data: { isSigned: true, signedAt: new Date() },
     });
 

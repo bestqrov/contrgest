@@ -4,7 +4,7 @@ import { prisma } from '@field-ops/db';
 import { authenticateDevice, authenticate, requireRole } from '../middleware/auth.middleware';
 import { parsePagination, buildMeta } from '@field-ops/shared';
 
-export const appActivityRouter = Router();
+export const appActivityRouter: Router = Router();
 
 const batchSchema = z.object({
   deviceId: z.string(),
