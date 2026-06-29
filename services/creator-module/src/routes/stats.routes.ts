@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '@field-ops/db';
 
-export const statsRouter = Router();
+export const statsRouter: Router = Router();
 
 statsRouter.get('/leaderboard', async (_req: Request, res: Response) => {
   const creators = await prisma.creator.findMany({
@@ -21,7 +21,7 @@ statsRouter.get('/leaderboard', async (_req: Request, res: Response) => {
     submissionsCount: c._count.submissions,
   }));
 
-  _res.json({ success: true, data: leaderboard });
+  res.json({ success: true, data: leaderboard });
 });
 
 statsRouter.get('/overview', async (_req: Request, res: Response) => {

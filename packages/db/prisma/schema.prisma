@@ -198,6 +198,8 @@ model Device {
   linkedAt        DateTime?
   deviceTokenHash String?
   provisionToken  String?
+  mdmProfileId    String?
+  mdmProfile      MdmPolicy?   @relation(fields: [mdmProfileId], references: [id])
   batteryLevel    Int?
   storageUsedMb   Int?
   totalStorageMb  Int?
@@ -216,6 +218,30 @@ model Device {
   @@index([status])
   @@index([mdmEnrolled])
   @@index([employeeId])
+  @@index([mdmProfileId])
+}
+
+model MdmPolicy {
+  id             String   @id @default(cuid())
+  name           String
+  version        Int      @default(1)
+  isActive       Boolean  @default(true)
+  allowedApps    String[]
+  blockedApps    String[]
+  wifiNetworks   Json?
+  screenLockSecs Int      @default(300)
+  requireEncrypt Boolean  @default(true)
+  disableCamera  Boolean  @default(false)
+  disableBluetooth Boolean @default(false)
+  policyJson     Json
+
+  devices Device[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([version])
 }
 
 model Message {

@@ -5,7 +5,7 @@ import { generateToken, createLogger } from '@field-ops/shared';
 import Redis from 'ioredis';
 
 const logger = createLogger('mdm-service:enrollment');
-export const enrollmentRouter = Router();
+export const enrollmentRouter: Router = Router();
 
 const redis = new Redis(process.env.REDIS_URL!);
 const TOKEN_EXPIRY_HOURS = parseInt(process.env.MDM_ENROLLMENT_TOKEN_EXPIRES_HOURS ?? '48', 10);
@@ -54,6 +54,7 @@ enrollmentRouter.post('/complete', async (req: Request, res: Response) => {
     }
 
     const { deviceId } = JSON.parse(tokenData) as { deviceId: string };
+    const appVersion = typeof req.body.appVersion === 'string' ? req.body.appVersion : undefined;
 
     const device = await prisma.device.findUnique({ where: { id: deviceId } });
     if (!device || device.imei !== body.imei) {
@@ -70,7 +71,7 @@ enrollmentRouter.post('/complete', async (req: Request, res: Response) => {
         mdmEnrolledAt: new Date(),
         mdmProfileId: activePolicy?.id,
         androidVersion: body.androidVersion,
-        appVersion: req.body.appVersion,
+        appVersion,
         policyVersion: activePolicy?.version ?? 0,
       },
     });

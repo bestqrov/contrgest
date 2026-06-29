@@ -3,11 +3,12 @@ import { prisma } from '@field-ops/db';
 import { createLogger } from '@field-ops/shared';
 
 const logger = createLogger('mdm-service:device-sync');
-export const deviceSyncRouter = Router();
+export const deviceSyncRouter: Router = Router();
 
 // Device heartbeat — reports status and receives policy updates
 deviceSyncRouter.post('/:deviceId/checkin', async (req: Request, res: Response) => {
   try {
+    const deviceId = Array.isArray(req.params.deviceId) ? req.params.deviceId[0] : req.params.deviceId;
     const { batteryLevel, storageUsedMb, totalStorageMb, appVersion, installedApps, policyVersion } = req.body as {
       batteryLevel?: number;
       storageUsedMb?: number;
@@ -17,14 +18,14 @@ deviceSyncRouter.post('/:deviceId/checkin', async (req: Request, res: Response) 
       policyVersion?: number;
     };
 
-    const device = await prisma.device.findUnique({ where: { id: req.params.deviceId } });
+    const device = await prisma.device.findUnique({ where: { id: deviceId } });
     if (!device?.mdmEnrolled) {
       res.status(403).json({ error: 'Device not enrolled' });
       return;
     }
 
     await prisma.device.update({
-      where: { id: req.params.deviceId },
+      where: { id: deviceId },
       data: {
         lastSeenAt: new Date(),
         lastIp: req.ip,
@@ -44,7 +45,7 @@ deviceSyncRouter.post('/:deviceId/checkin', async (req: Request, res: Response) 
     }
 
     if (blockedAppsFound.length > 0) {
-      logger.warn('Blocked apps detected', { deviceId: req.params.deviceId, apps: blockedAppsFound });
+      logger.warn('Blocked apps detected', { deviceId, apps: blockedAppsFound });
       // Create alert
       await prisma.alert.create({
         data: {

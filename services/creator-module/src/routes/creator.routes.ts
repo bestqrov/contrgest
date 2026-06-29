@@ -4,7 +4,7 @@ import { prisma } from '@field-ops/db';
 import { parsePagination, buildMeta, createLogger } from '@field-ops/shared';
 
 const logger = createLogger('creator-module:creators');
-export const creatorRouter = Router();
+export const creatorRouter: Router = Router();
 
 const createCreatorSchema = z.object({
   firstName: z.string().min(1),
@@ -37,8 +37,9 @@ creatorRouter.get('/', async (req: Request, res: Response) => {
 });
 
 creatorRouter.get('/:id', async (req: Request, res: Response) => {
+  const creatorId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const creator = await prisma.creator.findUnique({
-    where: { id: req.params.id },
+    where: { id: creatorId },
     include: {
       submissions: { orderBy: { createdAt: 'desc' }, take: 10 },
       commissions: { orderBy: { period: 'desc' }, take: 3 },
@@ -57,7 +58,7 @@ creatorRouter.post('/', async (req: Request, res: Response) => {
   try {
     const body = createCreatorSchema.parse(req.body);
 
-    const creator = await prisma.creator.create({ data: { ...body, commissionRate: body.commissionRate.toString() } });
+    const creator = await prisma.creator.create({ data: { ...body, commissionRate: body.commissionRate } });
     logger.info('Creator created', { id: creator.id });
     res.status(201).json({ success: true, data: creator });
   } catch (err) {

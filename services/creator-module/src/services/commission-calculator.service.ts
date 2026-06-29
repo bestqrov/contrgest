@@ -26,7 +26,7 @@ class CommissionCalculator {
         where: {
           creatorId: creator.id,
           status: 'APPROVED',
-          approvedAt: { gte: monthStart, lte: monthEnd },
+          reviewedAt: { gte: monthStart, lte: monthEnd },
         },
         select: { id: true, viewCount: true, likeCount: true, shareCount: true },
       });
@@ -48,7 +48,7 @@ class CommissionCalculator {
 
       const totalAmount = baseAmount * (rate / 100) + bonusAmount;
 
-      const commission = await prisma.commission.create({
+      await prisma.commission.create({
         data: {
           creatorId: creator.id,
           period,

@@ -5,7 +5,7 @@ import { parsePagination, buildMeta, createLogger } from '@field-ops/shared';
 import { commissionCalculator } from '../services/commission-calculator.service';
 
 const logger = createLogger('creator-module:commissions');
-export const commissionRouter = Router();
+export const commissionRouter: Router = Router();
 
 commissionRouter.get('/', async (req: Request, res: Response) => {
   const { skip, take, page, limit } = parsePagination(req.query);
@@ -47,9 +47,10 @@ commissionRouter.patch('/:id/pay', async (req: Request, res: Response) => {
   }
 
   const { paymentRef } = z.object({ paymentRef: z.string().optional() }).parse(req.body);
+  const commissionId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
   const updated = await prisma.commission.update({
-    where: { id: req.params.id },
+    where: { id: commissionId },
     data: { isPaid: true, paidAt: new Date(), paymentRef },
   });
 

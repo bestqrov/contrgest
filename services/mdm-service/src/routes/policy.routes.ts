@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { prisma } from '@field-ops/db';
+import { prisma, Prisma } from '@field-ops/db';
 import { createLogger } from '@field-ops/shared';
 
 const logger = createLogger('mdm-service:policy');
-export const policyRouter = Router();
+export const policyRouter: Router = Router();
 
 // Admin-only — secured by internal secret
 policyRouter.use((req: Request, res: Response, next) => {
@@ -36,7 +36,14 @@ policyRouter.post('/', async (req: Request, res: Response) => {
 
     const body = schema.parse(req.body);
 
-    const policy = await prisma.mdmPolicy.create({ data: { ...body, version: 1 } });
+    const policy = await prisma.mdmPolicy.create({
+      data: {
+        ...body,
+        version: 1,
+        policyJson: body.policyJson as Prisma.InputJsonValue,
+        wifiNetworks: body.wifiNetworks as Prisma.InputJsonValue | undefined,
+      },
+    });
     logger.info('Policy created', { id: policy.id });
     res.status(201).json({ success: true, data: policy });
   } catch (err) {
@@ -46,7 +53,8 @@ policyRouter.post('/', async (req: Request, res: Response) => {
 
 // Device fetches its policy
 policyRouter.get('/device/:deviceId', async (req: Request, res: Response) => {
-  const device = await prisma.device.findUnique({ where: { id: req.params.deviceId } });
+  const deviceId = Array.isArray(req.params.deviceId) ? req.params.deviceId[0] : req.params.deviceId;
+  const device = await prisma.device.findUnique({ where: { id: deviceId } });
   if (!device?.mdmEnrolled) {
     res.status(404).json({ error: 'Device not enrolled' });
     return;
